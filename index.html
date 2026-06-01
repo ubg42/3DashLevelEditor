@@ -4,10 +4,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>3Dash</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-<link rel="stylesheet" href="./style.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/okyesgoogl/amazng@main/style.css"/>
+<link rel="shortcut icon" href="3dash.ico" type="image/ico">
 <!-- Yandex Games SDK -->
-<script src="v2.c68e1234372250dd975a.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/okyesgoogl/amazng@main/v2.c68e1234372250dd975a.js"></script>
 <style>
         /* Убираем выделение по нажатию клавиш */
         canvas:focus {
@@ -15,8 +17,8 @@
         }
 
         html, body {
-           background-color: black;
-                /* Убираем отступы */
+                background-color: black;
+            /* Убираем отступы */
             padding: 0;
             margin: 0;
             /* Отключаем скролл и лонгтап на IOS */
@@ -40,7 +42,7 @@
 </div>
 <div id="loading-cover" style="display:none;">
 <div id="unity-loading-bar">
-<div id="unity-logo"><img src="logo.png"/></div>
+
 <div id="unity-progress-bar-empty" style="display: none;">
 <div id="unity-progress-bar-full"></div>
 </div>
@@ -50,11 +52,11 @@
 <!-- Additional body modules -->
 <script>
         const hideFullScreenButton = "";
-        const buildUrl = "Build";
+        const buildUrl = "https://cdn.jsdelivr.net/gh/okyesgoogl/amazng@main/Build";
         const loaderUrl = buildUrl + "/uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.loader.js";
         const config = {
             dataUrl: buildUrl + "/uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.data.br",
-            frameworkUrl: buildUrl + "/uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.framework.js.br",
+            frameworkUrl: buildUrl + "/uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.framework.js",
             codeUrl: buildUrl + "/uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.wasm.br",
         streamingAssetsUrl: "StreamingAssets",
             companyName: "DefaultCompany",
@@ -68,6 +70,49 @@
         const progressBarEmpty = document.querySelector("#unity-progress-bar-empty");
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
         const spinner = document.querySelector('.spinner');
+        /* === WASM.BR PART MERGE PATCH (4 parts) === */
+        const wasmBrFileName = "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.wasm.br";
+        const wasmBrUrl = `${buildUrl}/${wasmBrFileName}`;
+        const wasmBrPartCount = 4;
+
+        async function combineWasmBrParts() {
+            const parts = [];
+            for (let i = 0; i < wasmBrPartCount; i++) {
+                const partUrl = `${wasmBrUrl}.part${i}`;
+                const resp = await fetch(partUrl);
+                if (!resp.ok) throw new Error(`WASM parçası indirilemedi: ${partUrl}`);
+                const buf = await resp.arrayBuffer();
+                parts.push(new Uint8Array(buf));
+            }
+            let total = 0;
+            for (const p of parts) total += p.length;
+            const merged = new Uint8Array(total);
+            let offset = 0;
+            for (const p of parts) { merged.set(p, offset); offset += p.length; }
+            return merged.buffer;
+        }
+
+        // Unity loader'ın .wasm.br isteğini yakalayıp parçaları tek response'ta döndürüyoruz.
+        // Not: Response, .br sıkıştırmalı ham baytları içerir; loader'ın decompression fallback'ı
+        // .br dosyaları için devreye girdiğinde normal şekilde çalışır.
+        const __originalFetch = window.fetch.bind(window);
+        window.fetch = async function(input, init) {
+            try {
+                const url = (typeof input === 'string') ? input : (input && input.url) ? input.url : "";
+                if (url && url.endsWith(`/${wasmBrFileName}`)) {
+                    const mergedBuffer = await combineWasmBrParts();
+                    return new Response(mergedBuffer, {
+                        status: 200,
+                        headers: { "Content-Type": "application/octet-stream" }
+                    });
+                }
+            } catch (e) {
+                console.error("WASM merge fetch override error:", e);
+            }
+            return __originalFetch(input, init);
+        };
+        /* === /WASM.BR PART MERGE PATCH === */
+
 
         const canFullscreen = (function () {
             for (const key of [
@@ -90,6 +135,7 @@
         }
 
         // Фоновое изображение при загрузке игры. При сборке билда код меняется взависимости от настроек проекта.
+        var backgroundUnity = "url('" + buildUrl + "/uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.jpg') center / cover";
 
 
         loadingCover.style.display = "";
@@ -134,8 +180,7 @@
                     console.error(message);
                 });
             };
-            if (LocalHost())
-                StartUnityInstance_IfUnloaded();
+            StartUnityInstance();
         };
 
         function StartUnityInstance_IfUnloaded() {
@@ -151,28 +196,7 @@
         }
 
         // 
-        try {
-            const script = document.createElement("script");
-            script.src = loaderUrl;
-            script.onload = () => {
-                StartUnityInstance = function () {
-                    createUnityInstance(canvas, config, (progress) => {
-                        spinner.style.display = "none";
-                        progressBarEmpty.style.display = "";
-                        progressBarFull.style.width = `${100 * progress}%`;
-                    }).then((unityInstance) => {
-                        myGameInstance = unityInstance;
-                        loadingCover.style.display = "none";
-                    }).catch((message) => {
-                        console.error("Unity yükleme hatası:", message);
-                    });
-                };
-                StartUnityInstance();
-            };
-            document.body.appendChild(script);
-        } catch (error) {
-            console.error("Başlatma sırasında hata:", error);
-        }
+        
 
         function InitGame() {
             try {
